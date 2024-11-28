@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package plugin;
+
+service PluginService {
+  rpc MultiplyClick (MultiplyRequest) returns (MultiplyResponse) {}
+}
+
+message MultiplyRequest {
+  int32 count = 1;
+  int32 multiplier = 2;
+}
+
+message MultiplyResponse {
+  int32 newCount = 1;
+}

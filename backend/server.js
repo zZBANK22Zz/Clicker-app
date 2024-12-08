@@ -1,7 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
-const PORT = 8080;
+require('dotenv').config();
+const PORT = process.env.BACKEND_PORT || 8080;
 const database = require("./database");
 const path = require("path");
 const grpc = require("@grpc/grpc-js");

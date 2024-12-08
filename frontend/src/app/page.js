@@ -10,16 +10,16 @@ const Clicker = () => {
   // Fetch the current count from the server
   const fetchCount = async () => {
     try {
-      const response = await fetch("http://localhost:8080/api/count");
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/count`);
       if (!response.ok) {
         throw new Error("Failed to fetch count");
       }
       const data = await response.json();
-      setCount(data.count);
+      setCount(data.count); // Correctly set the count from API
     } catch (error) {
       console.error("Error fetching count:", error);
     } finally {
-      setIsLoading(false); // Stop loading once fetch is complete
+      setIsLoading(false);
     }
   };
 
@@ -27,8 +27,8 @@ const Clicker = () => {
   const handleIncrease = async () => {
     try {
       const endpoint = usePlugin
-        ? "http://localhost:8080/api/increase-plugin"
-        : "http://localhost:8080/api/increase";
+        ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/increase-plugin`
+        : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/increase`;
 
       const response = await fetch(endpoint, { method: "POST" });
       if (!response.ok) {
@@ -44,7 +44,7 @@ const Clicker = () => {
   // Decrease the count on the server
   const handleDecrease = async () => {
     try {
-      const response = await fetch("http://localhost:8080/api/decrease", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/decrease`, {
         method: "POST",
       });
       if (!response.ok) {

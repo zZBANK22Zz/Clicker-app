@@ -4,9 +4,11 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfilea
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    env_file:
+      - ./frontend/.env
 
   backend:
     build:
@@ -14,8 +16,11 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+    env_file:
+      - ./backend/.env
     volumes:
-      - ./backend/clicks.db:/app/clicks.db 
+      - ./backend/clicks.db:/app/clicks.db
+      - ./plugins:/app/plugins
 
   plugin:
     build:

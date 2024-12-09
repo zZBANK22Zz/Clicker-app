@@ -7,11 +7,38 @@ const database = require("./database");
 const path = require("path");
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
+const { connectRabbitMQ, sendMessage } = require("./RabbitMQ/rabbitmq"); /// <=== ต้อง api gateway สำหรับ RabbitMQ
+const amqp = require('amqplib');
 
 app.use(cors());
 app.use(express.json());
 
 let count = 0;
+let rabbitChannel;
+const rabbitQueue = "click_event";
+const decrementQueue = 'decrement_task_queue';
+
+//Connect to RabbitMQ and Create channel
+(async () => {
+  const { channel } = await connectRabbitMQ(process.env.RABBITMQ_URL, rabbitQueue);
+  rabbitChannel = channel;
+  console.log("RabbitMQ connected.");
+})();
+
+//Send event message queue to RabbitMQ function
+const sendEventMessageQueue = (eventType, currentValue) => {
+  const messageQueue = {
+    eventType,
+    currentValue,
+    timestamp: new Date().toISOString(),
+  };
+
+  rabbitChannel.sendToQueue(rabbitQueue, Buffer.from(JSON.stringify(messageQueue)), {
+    persistent: true,
+  });
+
+  console.log('Event sent to queue:', messageQueue);
+};
 
 // Load gRPC plugin proto file
 const PROTO_PATH = path.resolve(__dirname, "./plugins/plugin.proto");
@@ -57,17 +84,22 @@ app.get("/api/count", (req, res) => {
 app.post("/api/increase", (req, res) => {
   count += 1;
   const timestamp = new Date().toISOString();
+  const eventType = "Increase";
 
+  // บันทึกข้อมูลในฐานข้อมูล
   database.run(
-    "INSERT INTO clicks (count, timestamp) VALUES (?, ?)",
-    [count, timestamp],
+    "INSERT INTO clicks (timestamp, count, eventType) VALUES (?, ?, ?)",
+    [timestamp, count, eventType],
     (error) => {
       if (error) {
         console.error("[Database Error] Error saving click:", error);
         return res.status(500).json({ message: "Error saving click to database" });
       }
 
-      res.json({ count, timestamp });
+      // ส่งข้อมูลไปยัง RabbitMQ
+      sendEventMessageQueue(eventType, count);
+
+      res.json({ timestamp, currentValue: count, eventType });
     }
   );
 });
@@ -108,20 +140,26 @@ app.post("/api/increase-plugin", (req, res) => {
 });
 
 // Decrease the count
-app.post("/api/decrease", (req, res) => {
-  count = Math.max(0, count - 1);
-  const timestamp = new Date().toISOString();
 
+app.post("/api/decrease", (req, res) => {
+  count = Math.max(0, count - 1); // ตรวจสอบให้ค่า count ไม่ต่ำกว่า 0
+  const timestamp = new Date().toISOString();
+  const eventType = "Decrease";
+
+  // บันทึกข้อมูลในฐานข้อมูล
   database.run(
-    "INSERT INTO clicks (count, timestamp) VALUES (?, ?)",
-    [count, timestamp],
+    "INSERT INTO clicks (timestamp, count, eventType) VALUES (?, ?, ?)",
+    [timestamp, count, eventType],
     (error) => {
       if (error) {
         console.error("[Database Error] Error saving click:", error);
         return res.status(500).json({ message: "Error saving click to database" });
       }
 
-      res.json({ count, timestamp });
+      // ส่งข้อมูลไปยัง RabbitMQ
+      sendEventMessageQueue(eventType, count);
+
+      res.json({ timestamp, currentValue: count, eventType });
     }
   );
 });

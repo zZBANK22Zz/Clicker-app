@@ -1,7 +1,8 @@
 const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 
-const database = new sqlite3.Database(path.join(__dirname, "clicks.db"));
+const sqliteDbPath = process.env.SQLITE_DB_PATH || "/app/data/clicks.db";
+const database = new sqlite3.Database(sqliteDbPath);
 
 database.serialize(() => {
   // Create `clicks` table to store both count and timestamps

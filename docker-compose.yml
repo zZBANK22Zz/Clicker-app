@@ -9,6 +9,10 @@ services:
       - "3000:3000"
     env_file:
       - ./frontend/.env
+    depends_on:
+      - backend
+      - history-service
+    restart: always
 
   backend:
     build:
@@ -19,8 +23,15 @@ services:
     env_file:
       - ./backend/.env
     volumes:
-      - ./backend/clicks.db:/app/clicks.db
+      - ./backend/clicks.db:/app/data/clicks.db
       - ./plugins:/app/plugins
+      - ./RabbitMQ:/app/RabbitMQ
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: always
+    environment:
+      - RABBITMQ_URL=amqp://rabbitmq:5672
 
   plugin:
     build:
@@ -28,6 +39,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "50001:50001"
+    restart: always
 
   nginx:
     image: nginx:latest
@@ -36,5 +48,47 @@ services:
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
     depends_on:
-      - frontend
       - backend
+    restart: always
+
+  history-service:
+    build:
+      context: ./historyService
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    env_file:
+      - ./historyService/.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+    restart: always
+    volumes:
+      - ./RabbitMQ:/app/RabbitMQ
+      - ./historyService/data:/app/data
+
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_logs:/var/log/rabbitmq
+    restart: always
+
+volumes:
+  shared-db:
+  rabbitmq_data:
+  rabbitmq_logs:

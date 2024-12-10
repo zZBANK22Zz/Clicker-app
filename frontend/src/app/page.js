@@ -1,16 +1,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 const Clicker = () => {
   const [count, setCount] = useState(null); // Initialize count as null to handle loading state
   const [usePlugin, setPlugin] = useState(false);
   const [isLoading, setIsLoading] = useState(true); // Loading state
 
+  const router = useRouter();
+
+  const handleToDecreaseFeature = () => {
+    router.push("/DecrementPage");
+  };
+
   // Fetch the current count from the server
   const fetchCount = async () => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/count`);
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/count`
+      );
       if (!response.ok) {
         throw new Error("Failed to fetch count");
       }
@@ -44,9 +53,12 @@ const Clicker = () => {
   // Decrease the count on the server
   const handleDecrease = async () => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/decrease`, {
-        method: "POST",
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/decrease`,
+        {
+          method: "POST",
+        }
+      );
       if (!response.ok) {
         throw new Error("Failed to decrease count");
       }
@@ -88,11 +100,7 @@ const Clicker = () => {
         <h1 className="text-2xl font-mono font-bold">Clicker Counter</h1>
 
         {/* Display "Loading..." until the count is fetched */}
-        {isLoading ? (
-          <h2>Loading...</h2>
-        ) : (
-          <h2>Count: {count}</h2>
-        )}
+        {isLoading ? <h2>Loading...</h2> : <h2>Count: {count}</h2>}
 
         <div className="flex flex-row gap-10 p-10">
           {/* Increase Count Button */}
@@ -112,6 +120,12 @@ const Clicker = () => {
           </button>
         </div>
       </div>
+      <button
+        onClick={handleToDecreaseFeature}
+        className="text-white bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 font-medium rounded-full text-sm px-5 py-2.5 text-center mb-2 dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-800"
+      >
+        Extra Features
+      </button>
     </div>
   );
 };

@@ -1,14 +1,14 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
-require('dotenv').config();
+require("dotenv").config();
 const PORT = process.env.BACKEND_PORT || 8080;
 const database = require("./database");
 const path = require("path");
 const grpc = require("@grpc/grpc-js");
 const protoLoader = require("@grpc/proto-loader");
 const { connectRabbitMQ, sendMessage } = require("./RabbitMQ/rabbitmq"); /// <=== ต้อง api gateway สำหรับ RabbitMQ
-const amqp = require('amqplib');
+const amqp = require("amqplib");
 
 app.use(cors());
 app.use(express.json());
@@ -16,11 +16,14 @@ app.use(express.json());
 let count = 0;
 let rabbitChannel;
 const rabbitQueue = "click_event";
-const decrementQueue = 'decrement_task_queue';
+const decrementQueue = "decrement_task_queue";
 
 //Connect to RabbitMQ and Create channel
 (async () => {
-  const { channel } = await connectRabbitMQ(process.env.RABBITMQ_URL, rabbitQueue);
+  const { channel } = await connectRabbitMQ(
+    process.env.RABBITMQ_URL,
+    rabbitQueue
+  );
   rabbitChannel = channel;
   console.log("RabbitMQ connected.");
 })();
@@ -33,11 +36,15 @@ const sendEventMessageQueue = (eventType, currentValue) => {
     timestamp: new Date().toISOString(),
   };
 
-  rabbitChannel.sendToQueue(rabbitQueue, Buffer.from(JSON.stringify(messageQueue)), {
-    persistent: true,
-  });
+  rabbitChannel.sendToQueue(
+    rabbitQueue,
+    Buffer.from(JSON.stringify(messageQueue)),
+    {
+      persistent: true,
+    }
+  );
 
-  console.log('Event sent to queue:', messageQueue);
+  console.log("Event sent to queue:", messageQueue);
 };
 
 // Load gRPC plugin proto file
@@ -58,26 +65,37 @@ const client = new pluginProto.PluginService(
 );
 
 //load the count
-database.get("SELECT count FROM clicks ORDER BY id DESC LIMIT 1", (err, row) => {
-  if (err) {
-    console.error("[Database Error] Could not retrieve count:", err);
-    count = 0; // Default to 0 if there's an error
-  } else {
-    count = row ? row.count : 0; // Use the retrieved count or default to 0
-    console.log(`Loaded count from database: ${count}`);
+database.get(
+  "SELECT count FROM clicks ORDER BY id DESC LIMIT 1",
+  (err, row) => {
+    if (err) {
+      console.error("[Database Error] Could not retrieve count:", err);
+      count = 0; // Default to 0 if there's an error
+    } else {
+      count = row ? row.count : 0; // Use the retrieved count or default to 0
+      console.log(`Loaded count from database: ${count}`);
+    }
   }
-});
+);
 
 // Endpoint to get the current count
 app.get("/api/count", (req, res) => {
-  database.get("SELECT count FROM clicks ORDER BY id DESC LIMIT 1", (err, row) => {
-    if (err) {
-      console.error("[Database Error] Could not retrieve count:", err);
-      return res.status(500).json({ message: "Error retrieving count" });
-    }
+  database.get(
+    "SELECT id, count FROM clicks ORDER BY id DESC LIMIT 1",
+    (err, row) => {
+      if (err) {
+        console.error("[Database Error] Could not retrieve count:", err);
+        return res.status(500).json({ message: "Error retrieving count" });
+      }
 
-    res.json({ count: row ? row.count : 0 });
-  });
+      if (row) {
+        console.log("[API /api/count] Retrieved row:", row); // Debug log
+        res.json({ id: row.id, count: row.count });
+      } else {
+        res.json({ id: null, count: 0 });
+      }
+    }
+  );
 });
 
 // Standard increase endpoint (increments by 1)
@@ -93,7 +111,9 @@ app.post("/api/increase", (req, res) => {
     (error) => {
       if (error) {
         console.error("[Database Error] Error saving click:", error);
-        return res.status(500).json({ message: "Error saving click to database" });
+        return res
+          .status(500)
+          .json({ message: "Error saving click to database" });
       }
 
       // ส่งข้อมูลไปยัง RabbitMQ
@@ -153,7 +173,9 @@ app.post("/api/decrease", (req, res) => {
     (error) => {
       if (error) {
         console.error("[Database Error] Error saving click:", error);
-        return res.status(500).json({ message: "Error saving click to database" });
+        return res
+          .status(500)
+          .json({ message: "Error saving click to database" });
       }
 
       // ส่งข้อมูลไปยัง RabbitMQ
@@ -162,6 +184,65 @@ app.post("/api/decrease", (req, res) => {
       res.json({ timestamp, currentValue: count, eventType });
     }
   );
+});
+
+app.post("/api/extra-decrease", (req, res) => {
+  const { id } = req.body;
+  if (!id) {
+    console.error("[API /api/extra-decrease] ID is missing in request body");
+    return res.status(400).json({ error: "ID is required" });
+  }
+
+  console.log("[API /api/extra-decrease] Received ID:", id); // Debug log
+
+  const task = {
+    eventType: "Decrease",
+    id,
+  };
+
+  try {
+    rabbitChannel.sendToQueue(
+      decrementQueue,
+      Buffer.from(JSON.stringify(task)),
+      {
+        persistent: true,
+      }
+    );
+    console.log("Decrease task sent to RabbitMQ:", task);
+    res.status(200).json({ message: "Decrease task submitted", task });
+  } catch (error) {
+    console.error("Error sending decrease task to RabbitMQ:", error);
+    res.status(500).json({ error: "Failed to submit decrease task" });
+  }
+});
+
+app.post("/api/stop-decrease", (req, res) => {
+  const { id } = req.body; // Use ID from request body
+  if (!id) {
+    return res.status(400).json({ error: "ID is required" });
+  }
+
+  const task = {
+    eventType: "StopDecrease",
+    id, // Stop by ID
+  };
+
+  try {
+    rabbitChannel.sendToQueue(
+      decrementQueue,
+      Buffer.from(JSON.stringify(task)),
+      {
+        persistent: true,
+      }
+    );
+    console.log(`Stop decrement task sent for ID: ${id}`);
+    res
+      .status(200)
+      .json({ message: `Stop decrement task submitted for ID: ${id}` });
+  } catch (error) {
+    console.error("Error sending stop decrement task:", error);
+    res.status(500).json({ error: "Failed to submit stop decrement task" });
+  }
 });
 
 // Dashboard endpoint to display click history

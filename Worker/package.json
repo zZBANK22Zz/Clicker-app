@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "amqplib": "^0.10.5",
+    "sqlite3": "^5.1.7"
+  }
+}

@@ -1,6 +1,6 @@
 const amqp = require('amqplib');
 const sqlite3 = require('sqlite3').verbose();
-const DB_PATH = './data/clicks.db'; // Database path
+const DB_PATH = './data/clicks.db';
 
 const decrementQueue = 'decrement_task_queue';
 
@@ -12,6 +12,8 @@ const decrementQueue = 'decrement_task_queue';
 
     console.log('Worker connected to RabbitMQ and waiting for tasks...');
 
+    const activeTasks = {}; // เก็บสถานะ active ของแต่ละ ID
+
     channel.consume(decrementQueue, async (message) => {
       if (message) {
         const task = JSON.parse(message.content.toString());
@@ -19,37 +21,52 @@ const decrementQueue = 'decrement_task_queue';
 
         const db = new sqlite3.Database(DB_PATH);
 
-        const decreaseContinuously = (currentValue) => {
-          if (currentValue > 0) {
-            const newValue = currentValue - 1;
+        // Handle StopDecrease Event
+        if (task.eventType === 'StopDecrease') {
+          activeTasks[task.id] = false; // ตั้งสถานะหยุดการทำงาน
+          console.log(`Stop decrement task received for ID: ${task.id}`);
+          channel.ack(message); // Acknowledge the message
+          return;
+        }
 
-            db.run(
-              `UPDATE clicks SET count = ? WHERE id = (SELECT id FROM clicks ORDER BY id DESC LIMIT 1)`,
-              [newValue],
-              (err) => {
-                if (err) {
-                  console.error('Error updating count in database:', err);
-                } else {
-                  console.log(`Count updated to ${newValue}`);
-                  setTimeout(() => decreaseContinuously(newValue), 1000); // ลดค่าทุก 1 วินาที
+        // Handle Decrease Event
+        if (task.eventType === 'Decrease') {
+          const decreaseContinuously = (currentValue, id) => {
+            if (currentValue > 0 && activeTasks[id] !== false) {
+              const newValue = currentValue - 1;
+
+              db.run(
+                `UPDATE clicks SET count = ? WHERE id = ?`,
+                [newValue, id],
+                (err) => {
+                  if (err) {
+                    console.error('Error updating count in database:', err);
+                  } else {
+                    console.log(`Count updated to ${newValue} for ID: ${id}`);
+                  }
                 }
-              }
-            );
-          } else {
-            console.log('Value has reached zero.');
-            channel.ack(message); // Acknowledge task completion
-          }
-        };
+              );
 
-        // เริ่มลดค่าต่อเนื่อง
-        db.get('SELECT count FROM clicks ORDER BY id DESC LIMIT 1', (err, row) => {
-          if (err) {
-            console.error('Error fetching current count:', err);
-            channel.ack(message); // Acknowledge even if there's an error
-          } else if (row) {
-            decreaseContinuously(row.count);
-          }
-        });
+              // ลดค่าต่อเนื่องถ้า Task ยังไม่ถูกหยุด
+              setTimeout(() => decreaseContinuously(newValue, id), 1000);
+            } else {
+              // หยุดการทำงานเมื่อ activeTasks[id] === false
+              console.log(`Decrement stopped for ID: ${id}`);
+              channel.ack(message); // Acknowledge task completion
+            }
+          };
+
+          // เริ่มลดค่าเฉพาะ ID ที่ยัง active อยู่
+          db.get('SELECT count FROM clicks WHERE id = ?', [task.id], (err, row) => {
+            if (err) {
+              console.error('Error fetching current count:', err);
+              channel.ack(message); // Acknowledge even if there's an error
+            } else if (row) {
+              activeTasks[task.id] = true; // ตั้งค่า active สำหรับ ID
+              decreaseContinuously(row.count, task.id);
+            }
+          });
+        }
       }
     });
   } catch (error) {
